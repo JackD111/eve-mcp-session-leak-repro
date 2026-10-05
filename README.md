@@ -74,7 +74,19 @@ started=2 alive=2
 
 The turn ran two steps that touched the connection (`connection_search`, then
 `connection_execute`), and each opened its own MCP session. Both are still
-open. Send more turns, each after the previous one completes:
+open. In general `alive` equals the number of steps that called
+`connection_search` or `connection_execute`, so exact numbers vary with what the
+model decides to call. This prints that count:
+
+```sh
+curl -sN --max-time 2 http://127.0.0.1:2000/eve/v1/session/$S/stream | node -e '
+const steps = new Set();
+for (const line of require("fs").readFileSync(0, "utf8").split("\n").filter(Boolean)) {
+  const e = JSON.parse(line);
+  if (e.type === "actions.requested" && e.data.actions.some((a) => /^connection_/.test(a.toolName))) steps.add(`${e.data.turnId}/${e.data.stepIndex}`);
+}
+console.log(`connection steps=${steps.size}`);'
+``` Send more turns, each after the previous one completes:
 
 ```sh
 n=1
@@ -89,8 +101,11 @@ npm run -s sessions
 ```
 
 ```
-started=5 alive=5
+started=8 alive=8
 ```
+
+(`connection steps=8`: the model searched again in every follow-up. In another
+run it skipped the search and the counts were 5 and 5.)
 
 Wait past supergateway's 60 s idle timeout and check again. Nothing is closed,
 because each session still has eve's inbound SSE `GET` open:
@@ -101,7 +116,7 @@ lsof -nP -iTCP:8000 -sTCP:ESTABLISHED   # one connection per session, owned by t
 ```
 
 ```
-started=5 alive=5
+started=8 alive=8
 ```
 
 The sessions go away only after you stop `eve dev`: the streams close, and
@@ -132,7 +147,7 @@ GET                               409 e431529a-63dc-4b4d-a017-42f4d6a415db
 
 That is the `connection_execute` step's session. (The `connection_search`
 step's session before it shows the same `GET` sequence; its `tools/list`
-happened to finish first.) `GET` lines print 50 ms after supergateway answered
+happened to finish first. Which step loses the race varies between runs.) `GET` lines print 50 ms after supergateway answered
 them, so the `409` was served before `tools/list` was rejected. The turn's
 stream shows the failed call, and the agent replies that the call failed:
 
