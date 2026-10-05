@@ -23,7 +23,7 @@ Everything except these files is untouched `eve init` output:
   [supergateway](https://github.com/supercorp-ai/supergateway) 3.4.3 in
   stateful mode: one stub process per MCP session, a 60 s idle timeout, and the
   process killed when the session ends.
-- `npm run sessions` prints how many stub processes started and how many are
+- `npm run -s sessions` prints how many stub processes started and how many are
   still alive. That is the number of open MCP sessions.
 - `npm run proxy` (`latency-proxy.mjs`) forwards `:8001` to `:8000` and holds
   each `GET` response for 50 ms, like a network hop. It is only needed for
@@ -60,7 +60,7 @@ S=$(curl -s -X POST http://127.0.0.1:2000/eve/v1/session \
   -d '{"message":"Call the echo tool on the echo connection with the text \"one\", then reply with its result."}' \
   | node -pe 'JSON.parse(require("fs").readFileSync(0)).sessionId')
 # wait for the reply (curl -sN http://127.0.0.1:2000/eve/v1/session/$S/stream shows turn.completed)
-npm run sessions
+npm run -s sessions
 ```
 
 ```
@@ -76,9 +76,9 @@ for w in two three four; do
   curl -s -X POST http://127.0.0.1:2000/eve/v1/session/$S \
     -H 'Content-Type: application/json' \
     -d "{\"message\":\"Call the echo tool on the echo connection with the text \\\"$w\\\", then reply with its result.\"}"
-  sleep 15
+  echo; sleep 15
 done
-npm run sessions
+npm run -s sessions
 ```
 
 ```
@@ -89,7 +89,7 @@ Wait past supergateway's 60 s idle timeout and check again. Nothing is closed,
 because each session still has eve's inbound SSE `GET` open:
 
 ```sh
-sleep 75; npm run sessions
+sleep 75; npm run -s sessions
 lsof -nP -iTCP:8000 -sTCP:ESTABLISHED   # one connection per session, owned by the eve process
 ```
 
@@ -110,24 +110,27 @@ npm run proxy                                          # terminal 2
 ECHO_MCP_URL=http://127.0.0.1:8001/mcp npx eve dev --no-ui   # terminal 3
 ```
 
-Send the first message from bug 1 again. The proxy prints, per request,
-the method, status and `mcp-session-id`:
+Send the first message from bug 1 again. The proxy prints one line per
+response: HTTP method, JSON-RPC method, status, and `mcp-session-id`.
 
 ```
-POST 400 -                                    server/discover (expected: not supported)
-POST 200 -                                    initialize
-POST 202 01b66f2e-...                         notifications/initialized
-POST 400 01b66f2e-...                         tools/list: "No valid session ID provided"
-GET 400 -                                     inbound SSE opened before the session ID exists
-GET 200 01b66f2e-...                          inbound SSE
-GET 409 01b66f2e-...                          second inbound SSE for the same session
+POST   server/discover            400 -
+POST   initialize                 200 e431529a-63dc-4b4d-a017-42f4d6a415db
+POST   notifications/initialized  202 e431529a-63dc-4b4d-a017-42f4d6a415db
+GET                               400 -
+POST   tools/list                 400 e431529a-63dc-4b4d-a017-42f4d6a415db
+GET                               200 e431529a-63dc-4b4d-a017-42f4d6a415db
+GET                               409 e431529a-63dc-4b4d-a017-42f4d6a415db
 ```
 
-The proxy logs each line when the response arrives, so the order is response
-order. The stream shows the failed call:
+That is the `connection_execute` step's session. (The `connection_search`
+step's session before it shows the same `GET` sequence; its `tools/list`
+happened to finish first.) `GET` lines print 50 ms after supergateway answered
+them, so the `409` was served before `tools/list` was rejected. The turn's
+stream shows the failed call, and the agent replies that the call failed:
 
 ```
-action.result {"error":{"code":"ACTION_RESULT_FAILED","message":"MCP HTTP Transport Error: POSTing to endpoint (HTTP 400): {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Bad Request: No valid session ID provided\"},\"id\":null}"}, ...}
+action.result "error":{"code":"ACTION_RESULT_FAILED","message":"MCP HTTP Transport Error: POSTing to endpoint (HTTP 400): {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Bad Request: No valid session ID provided\"},\"id\":null}"}
 ```
 
 The MCP SDK server transport answers the second `GET` with
