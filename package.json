@@ -12,7 +12,10 @@
     "dev": "eve dev",
     "eval": "eve eval",
     "start": "eve start",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "mcp": "supergateway --stdio \"node mcp-stub.mjs\" --outputTransport streamableHttp --port 8000 --streamableHttpPath /mcp --stateful --sessionTimeout 60000",
+    "sessions": "node sessions.mjs",
+    "proxy": "node latency-proxy.mjs"
   },
   "dependencies": {
     "@vercel/connect": "2.2.0",
@@ -22,10 +25,10 @@
   },
   "devDependencies": {
     "@types/node": "24.x",
+    "supergateway": "3.4.3",
     "typescript": "7.0.2"
   },
   "engines": {
     "node": "24.x"
   }
-
 }
