@@ -13,7 +13,9 @@ the smallest stateful MCP server that shows two bugs:
 
 ## What is in here
 
-Everything except these files is untouched `eve init` output:
+Apart from `package.json` (scripts and the supergateway dev dependency), its
+lockfile, `.gitignore` (`.sessions`) and this README, everything outside these
+files is untouched `eve init` output:
 
 - `agent/connections/echo.ts` is one MCP connection. The URL defaults to
   `http://127.0.0.1:8000/mcp`, and `ECHO_MCP_URL` overrides it.
@@ -43,6 +45,7 @@ npm install
 Terminal 1:
 
 ```sh
+rm -rf .sessions
 npm run mcp
 ```
 
@@ -59,7 +62,9 @@ S=$(curl -s -X POST http://127.0.0.1:2000/eve/v1/session \
   -H 'Content-Type: application/json' \
   -d '{"message":"Call the echo tool on the echo connection with the text \"one\", then reply with its result."}' \
   | node -pe 'JSON.parse(require("fs").readFileSync(0)).sessionId')
-# wait for the reply (curl -sN http://127.0.0.1:2000/eve/v1/session/$S/stream shows turn.completed)
+# Count completed turns in the session's event stream (the stream replays from the start).
+turns() { curl -sN --max-time 2 http://127.0.0.1:2000/eve/v1/session/$S/stream | grep -c '"turn.completed"'; }
+until [ "$(turns)" -ge 1 ]; do :; done
 npm run -s sessions
 ```
 
@@ -69,14 +74,16 @@ started=2 alive=2
 
 The turn ran two steps that touched the connection (`connection_search`, then
 `connection_execute`), and each opened its own MCP session. Both are still
-open. Send more turns:
+open. Send more turns, each after the previous one completes:
 
 ```sh
+n=1
 for w in two three four; do
   curl -s -X POST http://127.0.0.1:2000/eve/v1/session/$S \
     -H 'Content-Type: application/json' \
     -d "{\"message\":\"Call the echo tool on the echo connection with the text \\\"$w\\\", then reply with its result.\"}"
-  echo; sleep 15
+  echo; n=$((n+1))
+  until [ "$(turns)" -ge $n ]; do :; done
 done
 npm run -s sessions
 ```
@@ -105,7 +112,7 @@ supergateway's idle timeout reaps them 60 s later.
 Stop the bug 1 processes, then start again with the 50 ms `GET` latency proxy in front of supergateway:
 
 ```sh
-npm run mcp                                            # terminal 1
+rm -rf .sessions; npm run mcp                          # terminal 1
 npm run proxy                                          # terminal 2
 ECHO_MCP_URL=http://127.0.0.1:8001/mcp npx eve dev --no-ui   # terminal 3
 ```
