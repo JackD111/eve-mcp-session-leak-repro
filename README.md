@@ -102,7 +102,7 @@ supergateway's idle timeout reaps them 60 s later.
 
 ## Bug 2: duplicate inbound `GET`, `409`, failed tool call
 
-Restart with the 50 ms `GET` latency proxy in front of supergateway:
+Stop the bug 1 processes, then start again with the 50 ms `GET` latency proxy in front of supergateway:
 
 ```sh
 npm run mcp                                            # terminal 1
